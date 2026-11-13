@@ -49,17 +49,20 @@ const yrs = (n) => (n >= 10 ? "10+ yrs" : n === 1 ? "1 yr" : n + " yrs");
 function card(c, rank) {
   const watched = getWatch().includes(c.t);
   return `<a class="card" href="#/c/${encodeURIComponent(c.t)}">
-    ${ring(c.score)}
-    <div class="card-body">
-      <div class="card-top">${rank ? `<span class="rank">#${rank}</span>` : ""}<strong>${esc(c.name)}</strong>${watched ? ' <span title="On your watchlist">★</span>' : ""}</div>
-      <div class="muted small">${esc(c.t)} · ${esc(c.country || "")} · ${esc(c.industry || c.sector)}</div>
-      <div class="stats">
-        <span><b>${c.m.yield ? pct(c.m.yield) : "0%"}</b> yield</span>
-        <span><b>${c.m.pe ? c.m.pe.toFixed(1) : "–"}</b> P/E</span>
-        <span><b>${yrs(c.streak)}</b> paying</span>
+    <div class="card-head">
+      ${ring(c.score, 56)}
+      <div class="card-title">
+        <strong>${watched ? "★ " : ""}${esc(c.name)}</strong>
+        <div class="muted small">${esc(c.country || c.t)} · ${esc(c.industry || c.sector)}</div>
       </div>
-      <div class="chips">${flagChips(c, true)}</div>
-    </div></a>`;
+      ${rank ? `<span class="rank rank-${rank <= 3 ? rank : "n"}">${rank}</span>` : ""}
+    </div>
+    <div class="stats">
+      <div><b>${c.m.yield ? pct(c.m.yield) : "0%"}</b><span>dividend yield</span></div>
+      <div><b>${c.m.pe ? c.m.pe.toFixed(1) : "–"}</b><span>P/E</span></div>
+      <div><b>${yrs(c.streak)}</b><span>paying</span></div>
+    </div>
+    ${c.flags.length ? `<div class="chips">${flagChips(c, true)}</div>` : ""}</a>`;
 }
 
 // Bar chart for yearly values (may include negatives). pairs: [[year, value], ...]
@@ -96,11 +99,20 @@ function pageToday() {
   const day = Math.floor(Date.now() / 864e5);
   const lesson = LESSONS[day % LESSONS.length];
   const better = bm ? list.filter((c) => c.score >= bm.score).length - 1 : 0;
+  const countries = new Set(list.map((c) => c.country).filter(Boolean)).size;
+  const excellent = list.filter((c) => c.score >= 75).length;
+  const avgYield = top.reduce((sum, c) => sum + c.m.yield, 0) / (top.length || 1);
 
   return `
-  <section class="hero">
-    <h1>Today's dividend radar</h1>
-    <p class="muted">${list.length} companies checked worldwide · data from ${fmtDate(state.data.date)}</p>
+  <section class="banner">
+    <div class="eyebrow">${new Date(state.data.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
+    <h1>Healthy dividends, <em>explained simply.</em></h1>
+    <p>Today's check of ${list.length} companies in ${countries} countries, ranked by how safely they pay you.</p>
+    <div class="banner-stats">
+      <div><b>${list.length}</b><span>companies checked</span></div>
+      <div><b>${excellent}</b><span>score "Excellent" (75+)</span></div>
+      <div><b>${pct(avgYield)}</b><span>average yield of the top ${TOP_N}</span></div>
+    </div>
   </section>
 
   ${bm ? `<section class="panel bench">
@@ -218,7 +230,7 @@ function pageCompany(t) {
     <div class="parts">${PARTS.map((p) => {
       const e = explainPart(p.key, c);
       const got = c.parts[p.key];
-      return `<div class="part">
+      return `<div class="part tone-${e.tone}">
         <div class="part-head"><span class="dot tone-${e.tone}"></span><strong>${p.title}</strong><span class="muted small">${got}/${p.max}</span></div>
         <div class="meter"><span class="tone-${e.tone}" style="width:${(got / p.max) * 100}%"></span></div>
         <div class="muted small q">${p.question}</div>

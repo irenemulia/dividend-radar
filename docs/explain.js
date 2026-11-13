@@ -34,6 +34,8 @@ function explainPart(key, c) {
         const cv = m.coverage;
         if (cv <= 0) return { tone: "bad", text: "Last year the business burned more cash than it brought in, yet still paid a dividend. That money came from savings or borrowing, which can't go on for long." };
         const t = `Last year, the spare cash left after running the business (\"free cash flow\") was ${cv.toFixed(1)}× the dividends they paid.`;
+        if (m.payout != null && m.payout > 1)
+          return { tone: "bad", text: t + ` But over the last 12 months they've paid out ${per100(m.payout, 0)} for every 100 of profit, which is more than they earn. That works for a while using savings, but if profits don't recover, the dividend will have to shrink.` };
         if (cv >= 1.5) return { tone: "good", text: t + " Plenty of room: they could pay the same dividend even if a bad year cut their cash by a third." };
         if (cv >= 1.0) return { tone: "ok", text: t + " Enough, but not by much. A weaker year could mean a smaller dividend." };
         return { tone: "bad", text: t + " Not enough, so part of the dividend wasn't paid from that year's cash." };
@@ -76,6 +78,10 @@ function explainPart(key, c) {
       const divYrs = c.divYears.filter(([y, v]) => y >= yr - 5 && y < yr && v > 0).length;
       let t = nets.length ? `They made a profit in ${profitable} of the last ${nets.length} years, and paid a dividend in ${divYrs} of the last 5 years.` : `They paid a dividend in ${divYrs} of the last 5 years.`;
       if (c.streak >= 10) t += " They've paid one every year for 10+ years.";
+      if (nets.length >= 3 && nets[nets.length - 1] > 0 && nets[nets.length - 1] < Math.max(...nets) * 0.5) {
+        const peak = c.hist.net.reduce((a, b) => (b[1] > a[1] ? b : a));
+        t += ` But profit is shrinking: the latest year was ${per100(nets[nets.length - 1] / peak[1], 0)}% of the ${peak[0]} peak. Dividends usually follow profit down.`;
+      }
       if (c.divChange != null && c.divChange < -0.3) t += ` Note: last year's dividend was ${pct(-c.divChange, 0)} smaller than the year before.`;
       else if (c.divChange != null && c.divChange > 0.05) t += ` Last year's dividend grew by ${pct(c.divChange, 0)}.`;
       const tone = c.parts.steady >= 12 ? "good" : c.parts.steady >= 7 ? "ok" : "bad";
@@ -102,6 +108,7 @@ const FLAGS = {
   div_cut: { tone: "ok", text: "The dividend was cut by more than 30% last year" },
   yield_trap: { tone: "ok", text: "The yield is so high the market may expect a cut" },
   profit_drop: { tone: "ok", text: "Profit fell by more than 30% last year" },
+  profit_shrinking: { tone: "ok", text: "Profit is less than half of its recent peak" },
   high_debt: { tone: "bad", text: "Heavy debt" },
   net_cash: { tone: "good", text: "More cash than debt" },
   streak10: { tone: "good", text: "Has paid a dividend every year for 10+ years" },

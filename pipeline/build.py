@@ -91,10 +91,13 @@ def fetch(sym):
         div_years = [[int(y), round(float(v), 6)] for y, v in by_year.items() if y >= this_year - 10]
 
     div_yield = ttm_div / price if ttm_div else 0.0
-    if div_yield > 0.5:  # currency mismatch in Yahoo data; fall back to Yahoo's own figure
-        div_yield = num(info.get("trailingAnnualDividendYield")) or 0.0
-        if div_yield > 0.5:
-            div_yield = 0.0
+    # Yahoo's dividend history is sometimes not adjusted for splits or uses another currency.
+    # If our figure is far above Yahoo's own trailing yield, trust Yahoo's.
+    yahoo_yield = num(info.get("trailingAnnualDividendYield"))
+    if yahoo_yield and div_yield > yahoo_yield * 1.8 and div_yield - yahoo_yield > 0.03:
+        div_yield = yahoo_yield
+    if div_yield > 0.5:
+        div_yield = 0.0
 
     # Streak of consecutive calendar years with a dividend, ending last year (max 10: the history kept)
     paid = {y for y, v in div_years if v > 0}
@@ -114,8 +117,9 @@ def fetch(sym):
     fcf = row(cf, "Free Cash Flow")
     div_paid = row(cf, "Cash Dividends Paid", "Common Stock Dividend Paid")
 
+    # Free cash flow means little for banks and property firms, so no coverage figure for them
     coverage = None
-    if fcf and div_paid and div_paid[-1][1]:
+    if fcf and div_paid and div_paid[-1][1] and (info.get("sector") or "") not in FINANCIAL_SECTORS:
         coverage = fcf[-1][1] / abs(div_paid[-1][1])
 
     de = num(info.get("debtToEquity"))
@@ -176,6 +180,10 @@ def tier(value, steps):
     return 0
 
 
+def nets_of(h):
+    return [v for _, v in h["net"]]
+
+
 def score(c):
     m, h = c["m"], c["hist"]
     fin = c["sector"] in FINANCIAL_SECTORS
@@ -207,6 +215,9 @@ def score(c):
     # 4. Profitability (15)
     parts["profit"] = tier(m["roe"], [(0.2, 15), (0.12, 10), (0.06, 5)])
 
+    profit_drop = len(nets_of(h)) >= 2 and nets_of(h)[-2] > 0 and nets_of(h)[-1] < nets_of(h)[-2] * 0.7
+    profit_shrinking = len(nets_of(h)) >= 3 and nets_of(h)[-1] < max(nets_of(h)) * 0.5
+
     # 5. Steadiness (15): profitable years + dividend years
     nets = [v for _, v in h["net"]]
     prof = (sum(1 for v in nets if v > 0) / len(nets) * 8) if nets else 0
@@ -216,7 +227,15 @@ def score(c):
     steady = prof + divs
     if c["divChange"] is not None and c["divChange"] < -0.3:
         steady -= 3
+    if profit_drop or profit_shrinking:
+        steady -= 4
     parts["steady"] = max(0, round(steady))
+
+    # Warning signs pull their part of the score down instead of only showing as notes
+    if m["payout"] is not None and m["payout"] > 1:
+        parts["cover"] = min(parts["cover"], 8)
+    if m["yield"] > 0.15:
+        parts["yield"] = min(parts["yield"], 18)
 
     # 6. Price (10): what you pay for each unit of profit
     pe = m["pe"]
@@ -227,7 +246,7 @@ def score(c):
     flags = []
     if m["payout"] is not None and m["payout"] > 1:
         flags.append("payout_over_100")
-    if h["fcf"] and h["fcf"][-1][1] < 0:
+    if h["fcf"] and h["fcf"][-1][1] < 0 and not fin:
         flags.append("fcf_negative")
     if nets and nets[-1] < 0:
         flags.append("loss")
@@ -235,8 +254,10 @@ def score(c):
         flags.append("div_cut")
     if m["yield"] > 0.15:
         flags.append("yield_trap")
-    if len(nets) >= 2 and nets[-2] > 0 and nets[-1] < nets[-2] * 0.7:
+    if profit_drop:
         flags.append("profit_drop")
+    elif profit_shrinking:
+        flags.append("profit_shrinking")
     if not fin and m["de"] is not None and m["de"] > 1.5:
         flags.append("high_debt")
     if not fin and parts["debt"] == 15:
@@ -306,7 +327,7 @@ def build_insights(companies, today):
 
     horizon = (today + dt.timedelta(days=21)).isoformat()
     for c in companies:
-        if c.get("exDiv") and today.isoformat() <= c["exDiv"] <= horizon and c["score"] >= 55:
+        if c.get("exDiv") and today.isoformat() < c["exDiv"] <= horizon and c["score"] >= 55:
             out.append({"kind": "ex_div", "t": c["t"], "date": c["exDiv"], "yield": c["m"]["yield"]})
 
     snap = {

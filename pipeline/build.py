@@ -91,11 +91,13 @@ def fetch(sym):
         div_years = [[int(y), round(float(v), 6)] for y, v in by_year.items() if y >= this_year - 10]
 
     div_yield = ttm_div / price if ttm_div else 0.0
-    # Yahoo's dividend history is sometimes not adjusted for splits or uses another currency.
-    # If our figure is far above Yahoo's own trailing yield, trust Yahoo's.
-    yahoo_yield = num(info.get("trailingAnnualDividendYield"))
-    if yahoo_yield and div_yield > yahoo_yield * 1.8 and div_yield - yahoo_yield > 0.03:
-        div_yield = yahoo_yield
+    # Yahoo's dividend history is sometimes not adjusted for splits (e.g. 8766.T), so if our figure is
+    # far above Yahoo's own yields, trust Yahoo's. Those yields are themselves near zero for companies
+    # that report in another currency than they trade in (e.g. BSSR.JK), so ignore tiny ones.
+    refs = [num(info.get("trailingAnnualDividendYield")), (num(info.get("dividendYield")) or 0) / 100]
+    refs = [r for r in refs if r and r >= 0.005]
+    if refs and div_yield > max(refs) * 1.8 and div_yield - max(refs) > 0.03:
+        div_yield = max(refs)
     if div_yield > 0.5:
         div_yield = 0.0
 

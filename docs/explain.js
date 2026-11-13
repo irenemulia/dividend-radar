@@ -52,7 +52,7 @@ function explainPart(key, c) {
     case "debt": {
       if (fin) return { tone: "na", text: `${c.sector === "Real Estate" ? "Property companies" : "Banks and insurers"} borrow money as part of their normal business, so the usual debt test doesn't apply. They get a neutral score here.` };
       if (m.cash != null && m.debt != null && m.cash >= m.debt)
-        return { tone: "good", text: `They have more cash in the bank (${money(m.cash, c.fccy)}) than all their debt (${money(m.debt, c.fccy)}), like a household whose savings are bigger than its mortgage. BSSR is like this too.` };
+        return { tone: "good", text: `They have more cash in the bank (${money(m.cash, c.fccy)}) than all their debt (${money(m.debt, c.fccy)}), like a household whose savings are bigger than its mortgage.${c.t === "BSSR.JK" ? "" : " BSSR is like this too."}` };
       if (m.de != null) {
         const t = `For every 100 of the owners' own money in the business, they've borrowed ${per100(m.de, 0)}.`;
         if (m.de < 0.3) return { tone: "good", text: t + " That's very little debt." };

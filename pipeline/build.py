@@ -51,15 +51,18 @@ REGIONS = [
     ("gr", 150, MIN_MCAP_USD), ("pl", 300, MIN_MCAP_USD), ("tr", 400, MIN_MCAP_USD),
     ("il", 400, MIN_MCAP_USD), ("sa", 300, MIN_MCAP_USD), ("ae", 150, MIN_MCAP_USD),
     ("qa", 60, MIN_MCAP_USD), ("kw", 150, MIN_MCAP_USD), ("eg", 150, MIN_MCAP_USD),
-    ("za", 300, MIN_MCAP_USD), ("br", 400, MIN_MCAP_USD), ("nz", 150, MIN_MCAP_USD),
+    ("za", 300, MIN_MCAP_USD), ("nz", 150, MIN_MCAP_USD),
     ("pk", 100, MIN_MCAP_USD),
     # These exchanges also list thousands of foreign companies, so they go last and the
     # duplicate check below keeps each company's busiest listing.
-    ("de", 800, MIN_MCAP_USD), ("at", 100, MIN_MCAP_USD), ("mx", 200, MIN_MCAP_USD),
-    ("cl", 100, MIN_MCAP_USD), ("ar", 100, MIN_MCAP_USD),
+    ("br", 3000, MIN_MCAP_USD), ("de", 4000, MIN_MCAP_USD), ("at", 2000, MIN_MCAP_USD),
+    ("mx", 1500, MIN_MCAP_USD), ("cl", 500, MIN_MCAP_USD), ("ar", 1000, MIN_MCAP_USD),
 ]
 # Only these exchanges within a region (US: no over-the-counter market; Germany: Xetra only)
 EXCHANGES = {"us": ["NMS", "NYQ", "NGM", "NCM", "ASE"], "de": ["GER"]}
+
+# Venues that only carry copies of shares listed elsewhere (Cboe Canada, Cboe UK, London IOB)
+SKIP_SUFFIXES = (".NE", ".XC", ".IL")
 
 # Currencies Yahoo quotes in hundredths
 MINOR = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ILA": ("ILS", 100)}
@@ -185,7 +188,7 @@ def screen_region(region, limit, min_usd, fx):
         kept = 0
         for q in quotes:
             sym, name = q.get("symbol"), q.get("longName") or q.get("shortName")
-            if not safe(sym) or not name:
+            if not safe(sym) or not name or sym.endswith(SKIP_SUFFIXES):
                 continue
             ccy = q.get("currency")
             mcap = to_usd(num(q.get("marketCap")), ccy, fx, minor=False)
@@ -463,7 +466,7 @@ def pick(curated, directory, state, today, budget, daily):
         if sym in curated_set:
             continue
         st = state.get(sym)
-        if not st:
+        if not st or (not st.get("u") and st.get("f", 0) < 3):
             new.append((-(d.get("mcap") or 0), sym))
             continue
         last = st.get("u") or st.get("t") or ""
@@ -482,7 +485,7 @@ def run_fetch(todo, fx, state, today, minutes):
     iso = today.isoformat()
     started = time.time()
     ctl = {"stop": False, "pause_until": 0}
-    recent, pauses, ok, fail = [], 0, 0, 0
+    recent, pauses = [], 0
 
     def work(sym):
         while time.time() < ctl["pause_until"]:
@@ -492,42 +495,56 @@ def run_fetch(todo, fx, state, today, minutes):
         time.sleep(0.3)
         return score(fetch(sym, fx))
 
-    with ThreadPoolExecutor(WORKERS) as pool:
-        futures = {pool.submit(work, s): s for s in todo}
-        for i, fut in enumerate(as_completed(futures), 1):
-            sym = futures[fut]
-            try:
-                c = fut.result()
-            except Skipped:
-                continue
-            except Exception as e:
-                fail += 1
-                recent.append(0)
-                st = state.setdefault(sym, {})
-                st["t"] = iso
-                st["f"] = st.get("f", 0) + 1
-                if fail <= 60:
-                    print("  fail %s: %s" % (sym, e), flush=True)
-            else:
-                ok += 1
-                recent.append(1)
-                c["updated"] = iso
-                save_json(os.path.join(DETAIL, sym + ".json"), c)
-                state[sym] = {"u": iso, "t": iso, "f": 0}
-            # Yahoo throttling shows up as a run of failures: wait, and give up after the third time
-            recent = recent[-80:]
-            if len(recent) == 80 and sum(recent) < 20:
-                pauses += 1
-                recent = []
-                if pauses >= 3:
-                    ctl["stop"] = True
-                    print("Too many failures; stopping this batch early.", flush=True)
+    def batch(symbols, workers):
+        nonlocal recent, pauses
+        done, errors = 0, {}
+        with ThreadPoolExecutor(workers) as pool:
+            futures = {pool.submit(work, s): s for s in symbols}
+            for i, fut in enumerate(as_completed(futures), 1):
+                sym = futures[fut]
+                try:
+                    c = fut.result()
+                except Skipped:
+                    continue
+                except Exception as e:
+                    errors[sym] = str(e)
+                    recent.append(0)
                 else:
-                    print("Many failures; pausing for 2 minutes.", flush=True)
-                    ctl["pause_until"] = time.time() + 120
-            if i % 100 == 0:
-                print("%d/%d done (%d ok, %d failed)" % (i, len(todo), ok, fail), flush=True)
-    print("fetched %d, failed %d, of %d planned" % (ok, fail, len(todo)), flush=True)
+                    done += 1
+                    recent.append(1)
+                    c["updated"] = iso
+                    save_json(os.path.join(DETAIL, sym + ".json"), c)
+                    state[sym] = {"u": iso, "t": iso, "f": 0}
+                # Yahoo throttling shows up as a run of failures: wait, and give up after the third time
+                recent = recent[-80:]
+                if len(recent) == 80 and sum(recent) < 20:
+                    pauses += 1
+                    recent = []
+                    if pauses >= 3:
+                        ctl["stop"] = True
+                        print("Too many failures; stopping this batch early.", flush=True)
+                    else:
+                        print("Many failures; pausing for 2 minutes.", flush=True)
+                        ctl["pause_until"] = time.time() + 120
+                if i % 100 == 0:
+                    print("%d/%d done (%d ok, %d failed)" % (i, len(symbols), done, len(errors)), flush=True)
+        return done, errors
+
+    ok, errors = batch(todo, WORKERS)
+    if errors and not ctl["stop"]:
+        # Most failures are brief throttling, so give them a second, gentler try
+        print("retrying %d that failed" % len(errors), flush=True)
+        time.sleep(60)
+        recent = []
+        again, errors = batch(list(errors), 2)
+        ok += again
+    for n, (sym, msg) in enumerate(errors.items()):
+        st = state.setdefault(sym, {})
+        st["t"] = iso
+        st["f"] = st.get("f", 0) + 1
+        if n < 40:
+            print("  fail %s: %s" % (sym, msg), flush=True)
+    print("fetched %d, failed %d, of %d planned" % (ok, len(errors), len(todo)), flush=True)
 
 
 # ---------- index and insights ----------
@@ -567,7 +584,7 @@ def build_index(curated_set, directory, state, today):
     for sym, d in directory.items():
         if sym in done:
             continue
-        no_data = 1 if state.get(sym, {}).get("f", 0) > 0 else 0
+        no_data = 1 if state.get(sym, {}).get("f", 0) >= 3 else 0
         pending.append([sym, d["name"], None, None, None, None, None, None, None, None,
                         int(d["mcap"] / 1e6) if d.get("mcap") else None, 0, d.get("exch"), no_data])
     analysed.sort(key=lambda r: (-r[5], -(r[10] or 0)))
@@ -593,7 +610,8 @@ def build_insights(companies, today):
     if prev:
         prev_top = set(prev.get("top", []))
         for sym in top:
-            if prev_top and sym not in prev_top:
+            # a company analysed for the first time hasn't "joined" anything
+            if prev_top and sym not in prev_top and sym in prev.get("c", {}):
                 out.append({"kind": "new_top", "t": sym, "score": by_t[sym]["score"]})
         for sym in prev_top - set(top):
             if sym in by_t:

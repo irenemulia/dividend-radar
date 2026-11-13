@@ -41,9 +41,10 @@ function ring(score, size = 64) {
     <text x="50%" y="50%" dy=".35em" text-anchor="middle" style="font-size:${size / 3.2}px">${score}</text></svg>`;
 }
 
-function flagChips(c, limit = 99) {
-  return c.flags.slice(0, limit).map((f) => FLAGS[f] ? `<span class="chip tone-${FLAGS[f].tone}">${FLAGS[f].text}</span>` : "").join("");
+function flagChips(c, short = false) {
+  return c.flags.map((f) => FLAGS[f] ? `<span class="chip tone-${FLAGS[f].tone}" title="${FLAGS[f].text}">${short ? FLAGS[f].short : FLAGS[f].text}</span>` : "").join("");
 }
+const yrs = (n) => (n >= 10 ? "10+ yrs" : n === 1 ? "1 yr" : n + " yrs");
 
 function card(c, rank) {
   const watched = getWatch().includes(c.t);
@@ -55,9 +56,9 @@ function card(c, rank) {
       <div class="stats">
         <span><b>${c.m.yield ? pct(c.m.yield) : "0%"}</b> yield</span>
         <span><b>${c.m.pe ? c.m.pe.toFixed(1) : "–"}</b> P/E</span>
-        <span><b>${c.streak >= 10 ? "10+" : c.streak}</b> yrs paying</span>
+        <span><b>${yrs(c.streak)}</b> paying</span>
       </div>
-      <div class="chips">${flagChips(c, 3)}</div>
+      <div class="chips">${flagChips(c, true)}</div>
     </div></a>`;
 }
 
@@ -86,8 +87,11 @@ function pageToday() {
   const list = state.data.companies.filter((c) => !c.stale);
   const top = list.slice(0, TOP_N);
   const bm = state.by[state.data.benchmark];
-  const items = (state.insights?.items || []).map((it) => ({ it, c: state.by[it.t] })).filter((x) => x.c);
-  const order = { ex_div: 0, new_top: 1, price_drop: 2, score_change: 3, left_top: 4 };
+  const all = (state.insights?.items || []).map((it) => ({ it, c: state.by[it.t] })).filter((x) => x.c);
+  const items = all.filter((x) => x.it.kind !== "ex_div");
+  const exDivs = all.filter((x) => x.it.kind === "ex_div" && x.c.score >= 65)
+    .sort((a, b) => a.it.date.localeCompare(b.it.date)).slice(0, 8);
+  const order = { new_top: 1, price_drop: 2, score_change: 3, left_top: 4 };
   items.sort((a, b) => order[a.it.kind] - order[b.it.kind] || b.c.score - a.c.score);
   const day = Math.floor(Date.now() / 864e5);
   const lesson = LESSONS[day % LESSONS.length];
@@ -114,6 +118,15 @@ function pageToday() {
       return x ? `<a class="feed-item" href="#/c/${encodeURIComponent(c.t)}"><span class="feed-icon tone-${x.tone}">${x.icon}</span><div><strong>${esc(x.title)}</strong><div class="muted small">${esc(x.text)}</div></div></a>` : "";
     }).join("")}</div>` : `<p class="muted">Nothing new yet. Changes show up here once there are at least two days of data to compare.</p>`}
   </section>
+
+  ${exDivs.length ? `<section>
+    <h2>Dividend deadlines coming up</h2>
+    <p class="muted small">To get a company's next dividend, you must own its shares <b>before</b> the ex-dividend date. Only healthy companies (score 65+) are listed.</p>
+    <table class="cmp deadlines"><tbody>${exDivs.map(({ it, c }) => `<tr>
+      <td>${fmtDate(it.date)}</td>
+      <td><a href="#/c/${encodeURIComponent(c.t)}">${esc(c.name)}</a> <span class="muted small">${esc(c.country || "")}</span></td>
+      <td>${pct(it.yield)} yield</td><td>${c.score}/100</td></tr>`).join("")}</tbody></table>
+  </section>` : ""}
 
   <section class="panel lesson">
     <div class="eyebrow">Today's 1-minute lesson</div>
@@ -175,7 +188,7 @@ function pageCompany(t) {
     ["Debt", c.flags.includes("net_cash") ? "More cash than debt" : c.m.de != null ? `D/E ${c.m.de.toFixed(2)}` : "–", bm.flags.includes("net_cash") ? "More cash than debt" : bm.m.de != null ? `D/E ${bm.m.de.toFixed(2)}` : "–"],
     ["Return on equity", c.m.roe != null ? pct(c.m.roe, 0) : "–", bm.m.roe != null ? pct(bm.m.roe, 0) : "–"],
     ["P/E", c.m.pe ? c.m.pe.toFixed(1) : "–", bm.m.pe ? bm.m.pe.toFixed(1) : "–"],
-    ["Years paying (max 10)", c.streak >= 10 ? "10+" : c.streak, bm.streak >= 10 ? "10+" : bm.streak],
+    ["Years of dividends in a row", yrs(c.streak), yrs(bm.streak)],
   ] : null;
 
   return `

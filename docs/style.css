@@ -173,3 +173,7 @@ input[type=range] { accent-color: var(--accent); }
   .bench { align-items: flex-start; }
   .cmp th, .cmp td { padding: .45rem .55rem; }
 }
+
+.deadlines td:first-child { color: var(--text); white-space: nowrap; font-weight: 600; }
+.deadlines td:nth-child(3), .deadlines td:nth-child(4) { white-space: nowrap; color: var(--muted); }
+.card .chip { font-size: .72rem; }

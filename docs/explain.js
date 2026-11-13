@@ -102,17 +102,17 @@ function explainPart(key, c) {
 }
 
 const FLAGS = {
-  payout_over_100: { tone: "bad", text: "They pay out more in dividends than they earn in profit" },
-  fcf_negative: { tone: "bad", text: "The business used up more cash than it brought in last year" },
-  loss: { tone: "bad", text: "They lost money in their latest year" },
-  div_cut: { tone: "ok", text: "The dividend was cut by more than 30% last year" },
-  yield_trap: { tone: "ok", text: "The yield is so high the market may expect a cut" },
-  profit_drop: { tone: "ok", text: "Profit fell by more than 30% last year" },
-  profit_shrinking: { tone: "ok", text: "Profit is less than half of its recent peak" },
-  high_debt: { tone: "bad", text: "Heavy debt" },
-  net_cash: { tone: "good", text: "More cash than debt" },
-  streak10: { tone: "good", text: "Has paid a dividend every year for 10+ years" },
-  covered: { tone: "good", text: "The dividend is well covered by spare cash" },
+  payout_over_100: { tone: "bad", text: "They pay out more in dividends than they earn in profit", short: "Pays out > profit" },
+  fcf_negative: { tone: "bad", text: "The business used up more cash than it brought in last year", short: "Cash burn" },
+  loss: { tone: "bad", text: "They lost money in their latest year", short: "Loss-making" },
+  div_cut: { tone: "ok", text: "The dividend was cut by more than 30% last year", short: "Dividend cut" },
+  yield_trap: { tone: "ok", text: "The yield is so high the market may expect a cut", short: "Yield may be a trap" },
+  profit_drop: { tone: "ok", text: "Profit fell by more than 30% last year", short: "Profit fell" },
+  profit_shrinking: { tone: "ok", text: "Profit is less than half of its recent peak", short: "Profit shrinking" },
+  high_debt: { tone: "bad", text: "Heavy debt", short: "Heavy debt" },
+  net_cash: { tone: "good", text: "More cash than debt", short: "Net cash" },
+  streak10: { tone: "good", text: "Has paid a dividend every year for 10+ years", short: "10+ yrs of dividends" },
+  covered: { tone: "good", text: "The dividend is well covered by spare cash", short: "Well covered" },
 };
 
 function verdict(score) {
